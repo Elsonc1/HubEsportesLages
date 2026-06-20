@@ -94,7 +94,7 @@
     function renderEstado(e) {
         renderMvp(e.mvp);
         renderEnquete(e.enquete);
-        renderFavoritos(e.favoritado);
+        renderFavoritos(e.equipesFavoritas);
         renderMural(e.mensagens);
     }
 
@@ -180,16 +180,20 @@
     }
 
     // ───────────────────────────────────────────────── Favoritos
-    function renderFavoritos(favoritado) {
+    var favoritasIds = [];
+
+    function renderFavoritos(lista) {
+        favoritasIds = (lista || []).map(Number);
         if (equipes.length === 0) {
             elFavoritos.innerHTML = '<p class="muted">Sem equipes neste evento.</p>';
             return;
         }
         elFavoritos.innerHTML = equipes.map(function (eq) {
-            var ativo = favoritado ? " torcida-opcao--ativa" : "";
-            var rotulo = favoritado ? "✓ Favoritada" : "❤ Favoritar";
+            var fav = favoritasIds.indexOf(Number(eq.id)) >= 0;
+            var ativo = fav ? " torcida-opcao--ativa" : "";
+            var rotulo = fav ? "✓ Favoritada" : "❤ Favoritar";
             return '<button type="button" class="torcida-opcao' + ativo + '" ' +
-                'data-equipe="' + eq.id + '" data-fav="' + (favoritado ? "1" : "0") + '">' +
+                'data-equipe="' + eq.id + '" data-fav="' + (fav ? "1" : "0") + '">' +
                 "<span>" + escapar(eq.nome) + "</span>" +
                 '<span class="torcida-opcao__votos">' + rotulo + "</span>" +
                 "</button>";
@@ -207,7 +211,12 @@
         api(jaFavorito ? "DELETE" : "POST", "/api/favoritos/equipes/" + equipeId)
             .then(function (r) {
                 if (!r.ok) { aviso(traduzErro(r.status)); return; }
-                renderFavoritos(!jaFavorito);
+                if (jaFavorito) {
+                    favoritasIds = favoritasIds.filter(function (id) { return id !== equipeId; });
+                } else if (favoritasIds.indexOf(equipeId) < 0) {
+                    favoritasIds.push(equipeId);
+                }
+                renderFavoritos(favoritasIds);
             });
     }
 

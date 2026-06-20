@@ -12,7 +12,7 @@ public record TorcidaEstadoDto(
     MvpDto Mvp,
     EnqueteDto? Enquete,
     IReadOnlyList<MensagemDto> Mensagens,
-    bool Favoritado);
+    IReadOnlyList<int> EquipesFavoritas);
 
 /// <summary>Votação de Jogador da Partida (MVP).</summary>
 public record MvpDto(

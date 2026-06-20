@@ -191,7 +191,7 @@ public class TorcidaService(HubDbContext db, ITorcedorContexto torcedor) : ITorc
             await MontarMvpAsync(evento.Id, torcedorId, ct),
             await MontarEnqueteAsync(evento.Id, torcedorId, ct),
             await ConsultarMensagensAsync(evento.Id, null, ct),
-            await ConsultarFavoritadoAsync(evento, torcedorId, ct));
+            await ConsultarEquipesFavoritasAsync(evento, torcedorId, ct));
     }
 
     private async Task<MvpDto> MontarMvpAsync(int eventoId, string? torcedorId, CancellationToken ct)
@@ -285,19 +285,21 @@ public class TorcidaService(HubDbContext db, ITorcedorContexto torcedor) : ITorc
         return mensagens.Select(m => m.ParaDto()).ToList();
     }
 
-    private async Task<bool> ConsultarFavoritadoAsync(Evento evento, string? torcedorId, CancellationToken ct)
+    private async Task<IReadOnlyList<int>> ConsultarEquipesFavoritasAsync(Evento evento, string? torcedorId, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(torcedorId))
-            return false;
+            return Array.Empty<int>();
 
         var ids = new List<int>(2);
         if (evento.EquipeCasaId is int casa) ids.Add(casa);
         if (evento.EquipeVisitanteId is int visitante) ids.Add(visitante);
         if (ids.Count == 0)
-            return false;
+            return Array.Empty<int>();
 
         return await db.EquipesFavoritas.AsNoTracking()
-            .AnyAsync(f => f.TorcedorId == torcedorId && ids.Contains(f.EquipeId), ct);
+            .Where(f => f.TorcedorId == torcedorId && ids.Contains(f.EquipeId))
+            .Select(f => f.EquipeId)
+            .ToListAsync(ct);
     }
 
     /// <summary>Salva tratando a violação do índice único (corrida de duplo voto) como idempotência.</summary>
