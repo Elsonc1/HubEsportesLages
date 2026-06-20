@@ -61,4 +61,7 @@ public class Evento
         PlacarCasa.HasValue && PlacarVisitante.HasValue
             ? $"{PlacarCasa} x {PlacarVisitante}"
             : null;
+
+    /// <summary>Indica se o evento aceita interações da torcida — somente durante o jogo (ao vivo).</summary>
+    public bool AceitaInteracao => Status == StatusEvento.AoVivo;
 }

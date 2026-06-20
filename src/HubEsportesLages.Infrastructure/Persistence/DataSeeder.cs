@@ -134,7 +134,7 @@ public static class DataSeeder
             descricao: "Prova de 5km e 10km com mais de 600 corredores pelas ruas do centro.");
 
         // ---- Ao vivo (acontecendo agora) ----
-        Novo("AABB Lages x Serra Futsal", "Liga Serrana de Futsal", futsal, jonesMinosso,
+        var aoVivo = Novo("AABB Lages x Serra Futsal", "Liga Serrana de Futsal", futsal, jonesMinosso,
             agora.AddMinutes(-25), StatusEvento.AoVivo, aabb, serraFutsal, 2, 2, destaque: true,
             descricao: "Jogo da rodada acontecendo agora no Ginásio Jones Minosso.");
 
@@ -172,6 +172,43 @@ public static class DataSeeder
             hoje.AddDays(16).AddHours(16), StatusEvento.Agendado, vilaNova, internacional);
 
         await db.Eventos.AddRangeAsync(eventos, ct);
+        await db.SaveChangesAsync(ct);
+
+        // ------------------------------------------------- Interação da torcida (ao vivo)
+        // Escalação (candidatos a MVP), enquete e mural para o jogo acontecendo agora.
+        var escalacao = new[]
+        {
+            new JogadorEvento { EventoId = aoVivo.Id, EquipeId = aabb.Id, Nome = "Bruno (GOL)" },
+            new JogadorEvento { EventoId = aoVivo.Id, EquipeId = aabb.Id, Nome = "Diego Ala" },
+            new JogadorEvento { EventoId = aoVivo.Id, EquipeId = aabb.Id, Nome = "Rafael Pivô" },
+            new JogadorEvento { EventoId = aoVivo.Id, EquipeId = serraFutsal.Id, Nome = "Léo Fixo" },
+            new JogadorEvento { EventoId = aoVivo.Id, EquipeId = serraFutsal.Id, Nome = "Marcos Ala" },
+            new JogadorEvento { EventoId = aoVivo.Id, EquipeId = serraFutsal.Id, Nome = "Tiago Pivô" },
+        };
+        await db.JogadoresEvento.AddRangeAsync(escalacao, ct);
+
+        await db.Enquetes.AddAsync(new Enquete
+        {
+            EventoId = aoVivo.Id,
+            Pergunta = "Qual será o resultado final?",
+            Ativa = true,
+            CriadoEm = agora.AddMinutes(-20),
+            Opcoes = new List<OpcaoEnquete>
+            {
+                new() { Texto = "Vitória do AABB Lages" },
+                new() { Texto = "Empate" },
+                new() { Texto = "Vitória do Serra Futsal" },
+            }
+        }, ct);
+
+        var muralSeed = new[]
+        {
+            new MensagemTorcida { EventoId = aoVivo.Id, TorcedorId = "seed-1", Autor = "Serra Azul", Texto = "Vamo AABB! 🔵", CriadoEm = agora.AddMinutes(-12) },
+            new MensagemTorcida { EventoId = aoVivo.Id, TorcedorId = "seed-2", Autor = "Torcida Serra", Texto = "Que jogão! ⚽", CriadoEm = agora.AddMinutes(-7) },
+            new MensagemTorcida { EventoId = aoVivo.Id, TorcedorId = "seed-3", Autor = "Lageano", Texto = "Empate justo até aqui 💪", CriadoEm = agora.AddMinutes(-2) },
+        };
+        await db.MensagensTorcida.AddRangeAsync(muralSeed, ct);
+
         await db.SaveChangesAsync(ct);
 
         // ----------------------------------------------------------------- Notificações

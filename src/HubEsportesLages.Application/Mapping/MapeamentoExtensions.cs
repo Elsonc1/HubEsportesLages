@@ -83,4 +83,7 @@ public static class MapeamentoExtensions
         n.Evento?.Slug,
         n.Modalidade?.Icone,
         n.Modalidade?.CorHex);
+
+    public static MensagemDto ParaDto(this MensagemTorcida m) => new(
+        m.Id, m.Autor, m.Texto, m.CriadoEm);
 }

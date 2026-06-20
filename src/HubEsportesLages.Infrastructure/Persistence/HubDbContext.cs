@@ -12,6 +12,13 @@ public class HubDbContext(DbContextOptions<HubDbContext> options) : DbContext(op
     public DbSet<Evento> Eventos => Set<Evento>();
     public DbSet<Inscricao> Inscricoes => Set<Inscricao>();
     public DbSet<Notificacao> Notificacoes => Set<Notificacao>();
+    public DbSet<JogadorEvento> JogadoresEvento => Set<JogadorEvento>();
+    public DbSet<VotoMvp> VotosMvp => Set<VotoMvp>();
+    public DbSet<Enquete> Enquetes => Set<Enquete>();
+    public DbSet<OpcaoEnquete> OpcoesEnquete => Set<OpcaoEnquete>();
+    public DbSet<VotoEnquete> VotosEnquete => Set<VotoEnquete>();
+    public DbSet<MensagemTorcida> MensagensTorcida => Set<MensagemTorcida>();
+    public DbSet<EquipeFavorita> EquipesFavoritas => Set<EquipeFavorita>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -57,6 +64,7 @@ public class HubDbContext(DbContextOptions<HubDbContext> options) : DbContext(op
             e.Property(x => x.PrecoIngresso).HasPrecision(10, 2);
             e.Ignore(x => x.EhConfronto);
             e.Ignore(x => x.Placar);
+            e.Ignore(x => x.AceitaInteracao);
 
             e.HasIndex(x => x.Slug).IsUnique();
             e.HasIndex(x => x.Inicio);
@@ -116,6 +124,103 @@ public class HubDbContext(DbContextOptions<HubDbContext> options) : DbContext(op
                 .WithMany()
                 .HasForeignKey(x => x.ModalidadeId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ----------------------------------------------------- Interação da torcida
+        b.Entity<JogadorEvento>(e =>
+        {
+            e.Property(x => x.Nome).HasMaxLength(120).IsRequired();
+            e.HasIndex(x => x.EventoId);
+
+            e.HasOne(x => x.Evento)
+                .WithMany()
+                .HasForeignKey(x => x.EventoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Equipe)
+                .WithMany()
+                .HasForeignKey(x => x.EquipeId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<VotoMvp>(e =>
+        {
+            e.Property(x => x.TorcedorId).HasMaxLength(64).IsRequired();
+            // 1 voto de MVP por torcedor por evento.
+            e.HasIndex(x => new { x.EventoId, x.TorcedorId }).IsUnique();
+
+            e.HasOne(x => x.Evento)
+                .WithMany()
+                .HasForeignKey(x => x.EventoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Jogador)
+                .WithMany()
+                .HasForeignKey(x => x.JogadorEventoId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<Enquete>(e =>
+        {
+            e.Property(x => x.Pergunta).HasMaxLength(200).IsRequired();
+            e.HasIndex(x => x.EventoId);
+
+            e.HasOne(x => x.Evento)
+                .WithMany()
+                .HasForeignKey(x => x.EventoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasMany(x => x.Opcoes)
+                .WithOne(o => o.Enquete!)
+                .HasForeignKey(o => o.EnqueteId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<OpcaoEnquete>(e =>
+        {
+            e.Property(x => x.Texto).HasMaxLength(160).IsRequired();
+        });
+
+        b.Entity<VotoEnquete>(e =>
+        {
+            e.Property(x => x.TorcedorId).HasMaxLength(64).IsRequired();
+            // 1 voto por torcedor por enquete.
+            e.HasIndex(x => new { x.EnqueteId, x.TorcedorId }).IsUnique();
+
+            e.HasOne(x => x.Enquete)
+                .WithMany()
+                .HasForeignKey(x => x.EnqueteId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Opcao)
+                .WithMany()
+                .HasForeignKey(x => x.OpcaoEnqueteId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<MensagemTorcida>(e =>
+        {
+            e.Property(x => x.TorcedorId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Autor).HasMaxLength(80).IsRequired();
+            e.Property(x => x.Texto).HasMaxLength(140).IsRequired();
+            e.HasIndex(x => new { x.EventoId, x.CriadoEm });
+
+            e.HasOne(x => x.Evento)
+                .WithMany()
+                .HasForeignKey(x => x.EventoId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<EquipeFavorita>(e =>
+        {
+            e.Property(x => x.TorcedorId).HasMaxLength(64).IsRequired();
+            // 1 favorito por torcedor por equipe.
+            e.HasIndex(x => new { x.TorcedorId, x.EquipeId }).IsUnique();
+
+            e.HasOne(x => x.Equipe)
+                .WithMany()
+                .HasForeignKey(x => x.EquipeId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

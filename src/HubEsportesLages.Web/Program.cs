@@ -1,5 +1,7 @@
+using HubEsportesLages.Application.Interfaces;
 using HubEsportesLages.Infrastructure;
 using HubEsportesLages.Web.BackgroundJobs;
+using HubEsportesLages.Web.Identidade;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,6 +13,10 @@ builder.Services.AddControllersWithViews();
 var connectionString = builder.Configuration.GetConnectionString("Default")
                        ?? "Data Source=hubesportes.db";
 builder.Services.AddInfrastructure(connectionString);
+
+// Identidade anônima do torcedor (cabeçalho X-Torcedor-Id) usada pela interação da torcida.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ITorcedorContexto, TorcedorContexto>();
 
 // Geração automática de lembretes para os eventos próximos.
 builder.Services.AddHostedService<NotificacaoLembreteWorker>();
