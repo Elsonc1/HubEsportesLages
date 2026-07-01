@@ -1,10 +1,21 @@
 using HubEsportesLages.Application.Interfaces;
 using HubEsportesLages.Infrastructure;
+using HubEsportesLages.Infrastructure.Identidade;
 using HubEsportesLages.Web.BackgroundJobs;
 using HubEsportesLages.Web.Identidade;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Serilog;
+using System.Text;
+
+// Npgsql: mantém o comportamento legado de timestamp (aceita DateTime Local/Unspecified
+// em colunas timestamptz). Necessário porque o DataSeeder usa DateTime.Now/Today.
+// Deve ficar no topo, antes de qualquer uso do provider (CreateBuilder/Serilog).
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
 // Configura Serilog: console + arquivo diário na pasta logs/.
 Log.Logger = new LoggerConfiguration()
@@ -28,47 +39,116 @@ builder.Host.UseSerilog();
 // MVC (site) + API REST (controllers com [ApiController]).
 builder.Services.AddControllersWithViews();
 
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options =>
+// Camada de dados e serviços de aplicação (PostgreSQL). Registra também o ASP.NET Core
+// Identity (usuários, roles persistidas e o cookie de aplicação).
+var connectionString = builder.Configuration.GetConnectionString("Default")
+                       ?? "Host=localhost;Port=5432;Database=hubesportes;Username=postgres;Password=hub";
+builder.Services.AddInfrastructure(connectionString, builder.Configuration);
+
+// Ajusta o cookie de autenticação do Identity: rotas de login/acesso negado e
+// redirecionamento separado para a área do organizador (/admin).
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.LoginPath = "/conta/login";
+    options.LogoutPath = "/conta/logout";
+    options.AccessDeniedPath = "/conta/login";
+    options.ExpireTimeSpan = TimeSpan.FromHours(2);
+    // Requisições com "Authorization: Bearer" são encaminhadas ao esquema JWT — assim os
+    // [Authorize(Roles="Admin")] da API funcionam por cookie (site) E por JWT (mobile).
+    options.ForwardDefaultSelector = context =>
+        context.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? JwtBearerDefaults.AuthenticationScheme
+            : null;
+    options.Events = new CookieAuthenticationEvents
     {
-        options.LoginPath = "/conta/login";
-        options.LogoutPath = "/conta/logout";
-        options.AccessDeniedPath = "/conta/login";
-        options.ExpireTimeSpan = TimeSpan.FromHours(2);
-        options.Events = new CookieAuthenticationEvents
+        OnRedirectToLogin = context =>
         {
-            OnRedirectToLogin = context =>
+            var returnUrl = context.Request.Path + context.Request.QueryString;
+            if (context.Request.Path.StartsWithSegments("/admin"))
             {
-                var returnUrl = context.Request.Path + context.Request.QueryString;
-                if (context.Request.Path.StartsWithSegments("/admin"))
-                {
-                    context.Response.Redirect("/admin/login?returnUrl=" + Uri.EscapeDataString(returnUrl));
-                }
-                else
-                {
-                    context.Response.Redirect("/conta/login?returnUrl=" + Uri.EscapeDataString(returnUrl));
-                }
-                return Task.CompletedTask;
-            },
-            OnRedirectToAccessDenied = context =>
-            {
-                if (context.Request.Path.StartsWithSegments("/admin"))
-                {
-                    context.Response.Redirect("/admin/login");
-                }
-                else
-                {
-                    context.Response.Redirect("/conta/login");
-                }
-                return Task.CompletedTask;
+                context.Response.Redirect("/admin/login?returnUrl=" + Uri.EscapeDataString(returnUrl));
             }
+            else
+            {
+                context.Response.Redirect("/conta/login?returnUrl=" + Uri.EscapeDataString(returnUrl));
+            }
+            return Task.CompletedTask;
+        },
+        OnRedirectToAccessDenied = context =>
+        {
+            if (context.Request.Path.StartsWithSegments("/admin"))
+            {
+                context.Response.Redirect("/admin/login");
+            }
+            else
+            {
+                context.Response.Redirect("/conta/login");
+            }
+            return Task.CompletedTask;
+        }
+    };
+});
+
+// Autenticação JWT Bearer para a API REST (consumo pelo app mobile Arena Lages).
+// ADICIONA o esquema JWT SEM trocar o padrão do Identity (cookie do site MVC).
+var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() ?? new JwtSettings();
+
+// SecretKey: em produção deve vir de env 'Jwt__SecretKey'. Em Development, se vazia, usa um
+// fallback longo SÓ em dev (com aviso). Em produção, a ausência de chave é um erro de configuração.
+if (string.IsNullOrWhiteSpace(jwtSettings.SecretKey))
+{
+    if (builder.Environment.IsDevelopment())
+    {
+        jwtSettings.SecretKey = "DEV-Jwt-SecretKey-BoraProJogo-troque-em-producao-via-env-Jwt__SecretKey";
+        Log.Warning(
+            "Jwt:SecretKey vazia — usando FALLBACK DE DEV (apenas em Development). Configure 'Jwt__SecretKey' (>= {Min} chars) via variável de ambiente em produção.",
+            JwtSettings.TamanhoMinimoChave);
+    }
+    else
+    {
+        throw new InvalidOperationException(
+            "Jwt:SecretKey não configurada. Defina a variável de ambiente 'Jwt__SecretKey' (>= 32 caracteres) em produção.");
+    }
+}
+
+if (Encoding.UTF8.GetByteCount(jwtSettings.SecretKey) < JwtSettings.TamanhoMinimoChave)
+{
+    throw new InvalidOperationException(
+        $"Jwt:SecretKey muito curta: são exigidos ao menos {JwtSettings.TamanhoMinimoChave} caracteres para HMAC-SHA256.");
+}
+
+// Disponibiliza as configs (já com a SecretKey resolvida) para o AuthApiController gerar o token.
+builder.Services.AddSingleton(jwtSettings);
+
+var chaveAssinatura = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey));
+
+builder.Services.AddAuthentication()
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidAudience = jwtSettings.Audience,
+            IssuerSigningKey = chaveAssinatura,
+            // Tolerância de relógio curta (padrão do framework são 5 min).
+            ClockSkew = TimeSpan.FromSeconds(30)
         };
     });
 
-// Camada de dados e serviços de aplicação (SQLite).
-var connectionString = builder.Configuration.GetConnectionString("Default")
-                       ?? "Data Source=hubesportes.db";
-builder.Services.AddInfrastructure(connectionString, builder.Configuration);
+// Política padrão dupla: os [Authorize] existentes na API passam a aceitar OS DOIS esquemas —
+// cookie do Identity (site MVC) e JWT Bearer (app mobile). Roles seguem funcionando.
+builder.Services.AddAuthorization(options =>
+{
+    options.DefaultPolicy = new AuthorizationPolicyBuilder(
+            IdentityConstants.ApplicationScheme,
+            JwtBearerDefaults.AuthenticationScheme)
+        .RequireAuthenticatedUser()
+        .Build();
+});
 
 // Identidade anônima do torcedor (cabeçalho X-Torcedor-Id) usada pela interação da torcida.
 builder.Services.AddHttpContextAccessor();
@@ -86,6 +166,24 @@ builder.Services.AddSwaggerGen(options =>
         Title = "Bora pro Jogo — API",
         Version = "v1",
         Description = "API pública da central de agenda e notificações dos esportes de Lages/SC."
+    });
+
+    // Esquema Bearer: permite testar os endpoints protegidos com o token do POST /api/auth/login.
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Informe apenas o token JWT (obtido em POST /api/auth/login). O 'Bearer ' é adicionado automaticamente."
+    });
+    options.AddSecurityRequirement(documento => new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecuritySchemeReference("Bearer", documento),
+            new List<string>()
+        }
     });
 });
 

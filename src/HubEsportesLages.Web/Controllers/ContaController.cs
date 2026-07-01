@@ -1,25 +1,25 @@
 using HubEsportesLages.Application.DTOs;
 using HubEsportesLages.Application.Interfaces;
+using HubEsportesLages.Infrastructure.Identidade;
 using HubEsportesLages.Web.Models;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
 namespace HubEsportesLages.Web.Controllers;
 
 /// <summary>
-/// Autenticação do torcedor (usuário comum). Login, registro e logout.
+/// Autenticação do torcedor (usuário comum) via ASP.NET Core Identity.
+/// Login, registro e logout com hash de senha, política forte e lockout.
 /// </summary>
 public class ContaController(
+    UserManager<ApplicationUser> userManager,
+    SignInManager<ApplicationUser> signInManager,
     IEmailService emailService,
     IEventoService eventos,
     ICatalogoService catalogo) : Controller
 {
-    // E-mails com acesso de administrador (hackathon). Mover para configuração/banco depois.
-    private static readonly string[] AdminsConhecidos = { "elsouzalopes@gmail.com" };
-
     [HttpGet("conta")]
     [Authorize]
     public async Task<IActionResult> Index(CancellationToken ct)
@@ -56,38 +56,40 @@ public class ContaController(
     {
         ViewData["ReturnUrl"] = returnUrl;
 
-        // TODO: Validar contra o banco quando a entidade Usuario for criada.
-        // Por enquanto, aceita qualquer usuário com senha >= 6 caracteres para demonstração.
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password) || password.Length < 6)
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
             ModelState.AddModelError(string.Empty, "Usuário ou senha incorretos.");
             return View();
         }
 
+        // Aceita login por e-mail ou por nome de usuário.
         var alvo = username.Trim();
-        var ehAdmin = Array.Exists(AdminsConhecidos, a => string.Equals(a, alvo, StringComparison.OrdinalIgnoreCase));
+        var usuario = await userManager.FindByEmailAsync(alvo)
+                      ?? await userManager.FindByNameAsync(alvo);
 
-        var claims = new List<Claim>
+        if (usuario is null)
         {
-            new(ClaimTypes.Name, username),
-            new(ClaimTypes.Role, ehAdmin ? "Admin" : "Torcedor")
-        };
-
-        // Se o username parecer um e-mail, adicionamos a claim de e-mail
-        if (username.Contains('@'))
-        {
-            claims.Add(new Claim(ClaimTypes.Email, username));
+            ModelState.AddModelError(string.Empty, "Usuário ou senha incorretos.");
+            return View();
         }
 
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        var principal = new ClaimsPrincipal(identity);
+        var resultado = await signInManager.PasswordSignInAsync(
+            usuario, password, isPersistent: true, lockoutOnFailure: true);
 
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
+        if (resultado.Succeeded)
+        {
+            if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+                return Redirect(returnUrl);
 
-        if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
-            return Redirect(returnUrl);
+            return RedirectToAction(nameof(Index));
+        }
 
-        return RedirectToAction(nameof(Index));
+        if (resultado.IsLockedOut)
+            ModelState.AddModelError(string.Empty, "Conta temporariamente bloqueada por excesso de tentativas. Tente novamente em alguns minutos.");
+        else
+            ModelState.AddModelError(string.Empty, "Usuário ou senha incorretos.");
+
+        return View();
     }
 
     [HttpGet("conta/registrar")]
@@ -109,18 +111,32 @@ public class ContaController(
         if (string.IsNullOrWhiteSpace(email))
             ModelState.AddModelError(string.Empty, "Informe um e-mail válido.");
 
-        if (string.IsNullOrWhiteSpace(senha) || senha.Length < 6)
-            ModelState.AddModelError(string.Empty, "A senha deve ter pelo menos 6 caracteres.");
-
         if (senha != confirmarSenha)
             ModelState.AddModelError(string.Empty, "As senhas não coincidem.");
 
         if (!ModelState.IsValid)
             return View();
 
-        // TODO: Persistir o usuário no banco quando a entidade Usuario for criada.
+        var usuario = new ApplicationUser
+        {
+            UserName = email.Trim(),
+            Email = email.Trim(),
+            NomeCompleto = nome.Trim()
+        };
 
-        // Envia e-mail de boas-vindas.
+        // A política de senha forte é validada pelo Identity em CreateAsync.
+        var resultado = await userManager.CreateAsync(usuario, senha);
+        if (!resultado.Succeeded)
+        {
+            foreach (var erro in resultado.Errors)
+                ModelState.AddModelError(string.Empty, TraduzirErro(erro));
+            return View();
+        }
+
+        // Todo cadastro novo entra como Torcedor.
+        await userManager.AddToRoleAsync(usuario, "Torcedor");
+
+        // Envia e-mail de boas-vindas (vai para o log no ambiente de dev).
         var corpoHtml = $"""
             <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; background: #0b2545; color: #fff; border-radius: 12px; padding: 28px;">
                 <h2 style="margin: 0 0 12px; color: #22c55e;">🎉 Bem-vindo(a), {nome}!</h2>
@@ -131,7 +147,7 @@ public class ContaController(
             </div>
             """;
 
-        await emailService.EnviarAsync("🎉 Bem-vindo ao Bora pro Jogo!", corpoHtml, email, ct);
+        await emailService.EnviarAsync("🎉 Bem-vindo ao Bora pro Jogo!", corpoHtml, email.Trim(), ct);
 
         TempData["RegistroOk"] = $"Conta criada com sucesso para {nome}! Faça login para continuar.";
         return RedirectToAction(nameof(Login));
@@ -141,7 +157,20 @@ public class ContaController(
     [Authorize]
     public async Task<IActionResult> Logout()
     {
-        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await signInManager.SignOutAsync();
         return RedirectToAction("Index", "Home");
     }
+
+    /// <summary>Traduz as mensagens de erro do Identity para português.</summary>
+    private static string TraduzirErro(IdentityError erro) => erro.Code switch
+    {
+        "DuplicateUserName" or "DuplicateEmail" => "Já existe uma conta com este e-mail.",
+        "PasswordTooShort" => "A senha deve ter pelo menos 8 caracteres.",
+        "PasswordRequiresDigit" => "A senha deve conter pelo menos um número.",
+        "PasswordRequiresUpper" => "A senha deve conter pelo menos uma letra maiúscula.",
+        "PasswordRequiresLower" => "A senha deve conter pelo menos uma letra minúscula.",
+        "PasswordRequiresNonAlphanumeric" => "A senha deve conter pelo menos um caractere especial.",
+        "InvalidEmail" => "Informe um e-mail válido.",
+        _ => erro.Description
+    };
 }

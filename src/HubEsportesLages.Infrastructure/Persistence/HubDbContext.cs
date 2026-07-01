@@ -1,10 +1,16 @@
 using HubEsportesLages.Domain.Entities;
+using HubEsportesLages.Infrastructure.Identidade;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace HubEsportesLages.Infrastructure.Persistence;
 
-/// <summary>Contexto EF Core do Hub Esportes Lages (provider SQLite).</summary>
-public class HubDbContext(DbContextOptions<HubDbContext> options) : DbContext(options)
+/// <summary>
+/// Contexto EF Core do Hub Esportes Lages (provider SQLite). Herda de
+/// <see cref="IdentityDbContext{ApplicationUser}"/> para persistir usuários,
+/// roles e claims do ASP.NET Core Identity junto ao domínio.
+/// </summary>
+public class HubDbContext(DbContextOptions<HubDbContext> options) : IdentityDbContext<ApplicationUser>(options)
 {
     public DbSet<Modalidade> Modalidades => Set<Modalidade>();
     public DbSet<Local> Locais => Set<Local>();
@@ -23,6 +29,9 @@ public class HubDbContext(DbContextOptions<HubDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        // Configura primeiro as tabelas do Identity (AspNetUsers, AspNetRoles, etc.).
+        base.OnModelCreating(b);
+
         b.Entity<Modalidade>(e =>
         {
             e.Property(x => x.Nome).HasMaxLength(80).IsRequired();

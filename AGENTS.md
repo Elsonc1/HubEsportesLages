@@ -83,3 +83,18 @@ MCP é opcional e configurado em cada IDE separadamente, com servidores equivale
 `.mcp.json` (Claude, `mcpServers`), e config global do Antigravity via UI ("View raw config").
 Adote MCP só quando houver um servidor que traga valor real (ex.: issues do GitHub/GitLab).
 Nunca commite tokens — use variáveis de ambiente nos campos `env`.
+
+## 6. Economia de tokens — use o `rtk` (Rust Token Killer)
+Para reduzir o consumo de tokens, **prefixe os comandos de terminal com `rtk`** — um proxy que filtra e
+comprime a saída antes de chegar ao LLM. Se não houver filtro para um comando, o `rtk` o repassa sem
+alterar, então é **sempre seguro**. Vale para build, testes, git, busca e leitura:
+
+```bash
+rtk dotnet build HubEsportesLages.slnx
+rtk dotnet run --project src/HubEsportesLages.Web
+rtk git status      # rtk git diff | log | add | commit
+rtk grep "<padrão>" # rtk ls | find | read
+```
+Em cadeias com `&&`, prefixe **cada** comando (`rtk git add . && rtk git commit -m "..."`). Referência
+completa dos subcomandos no bloco `<!-- rtk-instructions -->` do `CLAUDE.md`. Binário em
+`%LOCALAPPDATA%\rtk` (no PATH do usuário).

@@ -310,9 +310,9 @@ public class TorcidaService(HubDbContext db, ITorcedorContexto torcedor) : ITorc
             await db.SaveChangesAsync(ct);
         }
         catch (DbUpdateException ex) when (
-            ex.InnerException is Microsoft.Data.Sqlite.SqliteException sqlite && sqlite.SqliteErrorCode == 19)
+            ex.InnerException is Npgsql.PostgresException pg && pg.SqlState == "23505")
         {
-            // 19 = SQLITE_CONSTRAINT (índice único): outro voto do mesmo torcedor já entrou.
+            // 23505 = unique_violation (índice único): outro voto do mesmo torcedor já entrou.
             // Trata como idempotência; demais falhas de persistência propagam.
             db.ChangeTracker.Clear();
         }

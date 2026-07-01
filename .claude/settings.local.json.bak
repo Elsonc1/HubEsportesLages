@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.eventooficial.com.br)",
+      "WebFetch(domain:esportecuritibanos.sc.gov.br)",
+      "Bash(dotnet new *)",
+      "Bash(dotnet sln *)",
+      "Bash(dotnet add *)",
+      "Bash(rm -f src/HubEsportesLages.Domain/Class1.cs src/HubEsportesLages.Application/Class1.cs src/HubEsportesLages.Infrastructure/Class1.cs)",
+      "Bash(dotnet build *)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s http://localhost:5210/)",
+      "Bash(curl -s -I http://localhost:5210/)",
+      "Bash(grep -E \"error|warning CS|Build succeeded|Build FAILED|\\\\.dll$\")",
+      "WebFetch(domain:www.figma.com)",
+      "Bash(dotnet workload *)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:github.github.com)",
+      "WebFetch(domain:antigravity.google)",
+      "WebFetch(domain:docs.gitlab.com)",
+      "WebFetch(domain:agents.md)",
+      "WebFetch(domain:github.blog)",
+      "WebFetch(domain:code.visualstudio.com)",
+      "WebFetch(domain:discuss.ai.google.dev)",
+      "WebFetch(domain:docs.cloud.google.com)",
+      "WebFetch(domain:about.gitlab.com)",
+      "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:antigravitylab.net)",
+      "WebFetch(domain:aimeetcode.substack.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:codemeetai.substack.com)",
+      "Bash(bash scripts/check-specs.sh)",
+      "Bash(ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=\"http://0.0.0.0:5210\" dotnet run --no-launch-profile)",
+      "Bash(echo \"iniciando, pid=$!\")"
+    ]
+  }
+}

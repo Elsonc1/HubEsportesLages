@@ -44,3 +44,5 @@ nomes de tipos/membros seguem o padrão já existente no código.
   no corpo JSON via terminal para evitar problemas de encoding do shell).
 
 Entregue mudanças coesas, mínimas e no estilo do código vizinho. Não faça commit a menos que seja pedido.
+
+**Economia de tokens:** prefixe os comandos de terminal com `rtk` (`rtk dotnet build`, `rtk git status/diff`, `rtk grep`, `rtk ls`) — proxy que comprime a saída; passa adiante se não houver filtro. Ver AGENTS.md §6.

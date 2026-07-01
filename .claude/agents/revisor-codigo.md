@@ -28,3 +28,5 @@ Seu papel é **somente revisar** (não editar). Produza uma lista objetiva de ac
 - Se houver diff/controle de versão, foque nas mudanças; senão, revise os arquivos relevantes ao escopo.
 - Classifique cada achado como **[Bug]**, **[Risco]**, **[Arquitetura]** ou **[Melhoria]**, com
   `arquivo:linha` e uma sugestão concreta de correção. Liste primeiro o que for mais crítico.
+
+**Economia de tokens:** rode as verificações pelo terminal com `rtk` (`rtk dotnet build`, `rtk git diff`, `rtk grep`) — proxy que comprime a saída. Ver AGENTS.md §6.

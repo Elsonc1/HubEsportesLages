@@ -1,10 +1,13 @@
 using HubEsportesLages.Application.Interfaces;
 using HubEsportesLages.Infrastructure.Email;
+using HubEsportesLages.Infrastructure.Identidade;
 using HubEsportesLages.Infrastructure.Persistence;
 using HubEsportesLages.Infrastructure.Services;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace HubEsportesLages.Infrastructure;
 
@@ -13,7 +16,31 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, string connectionString, IConfiguration configuration)
     {
-        services.AddDbContext<HubDbContext>(options => options.UseSqlite(connectionString));
+        services.AddDbContext<HubDbContext>(options => options.UseNpgsql(connectionString));
+
+        // ASP.NET Core Identity sobre o HubDbContext (PostgreSQL), com roles persistidas.
+        services.AddIdentity<ApplicationUser, IdentityRole>(options =>
+            {
+                // Política de senha forte obrigatória.
+                options.Password.RequiredLength = 8;
+                options.Password.RequireDigit = true;
+                options.Password.RequireUppercase = true;
+                options.Password.RequireLowercase = true;
+                options.Password.RequireNonAlphanumeric = true;
+
+                // Bloqueio por tentativas para mitigar força bruta.
+                options.Lockout.AllowedForNewUsers = true;
+                options.Lockout.MaxFailedAccessAttempts = 5;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+
+                // Login não exige confirmação de e-mail (cenário do Hub).
+                options.SignIn.RequireConfirmedAccount = false;
+
+                // E-mail único por conta.
+                options.User.RequireUniqueEmail = true;
+            })
+            .AddEntityFrameworkStores<HubDbContext>()
+            .AddDefaultTokenProviders();
 
         services.AddScoped<IEventoService, EventoService>();
         services.AddScoped<ICatalogoService, CatalogoService>();
@@ -44,12 +71,25 @@ public static class DependencyInjection
         return services;
     }
 
-    /// <summary>Cria o banco (se necessário) e popula com o cenário demonstrativo.</summary>
+    /// <summary>
+    /// Aplica as migrations pendentes, garante a identidade (roles + admin) e
+    /// popula o cenário demonstrativo.
+    /// </summary>
     public static async Task InicializarBancoAsync(this IServiceProvider provider, CancellationToken ct = default)
     {
         using var scope = provider.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<HubDbContext>();
-        await db.Database.EnsureCreatedAsync(ct);
+        var sp = scope.ServiceProvider;
+
+        var db = sp.GetRequiredService<HubDbContext>();
+        await db.Database.MigrateAsync(ct);
+
+        // Identidade: roles "Admin"/"Torcedor" e usuário administrador inicial.
+        var userManager = sp.GetRequiredService<UserManager<ApplicationUser>>();
+        var roleManager = sp.GetRequiredService<RoleManager<IdentityRole>>();
+        var configuration = sp.GetRequiredService<IConfiguration>();
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("IdentidadeSeeder");
+        await IdentidadeSeeder.SeedAsync(userManager, roleManager, configuration, logger);
+
         await DataSeeder.SeedAsync(db, ct);
     }
 }
